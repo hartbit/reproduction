@@ -1,8 +1,7 @@
-import { Entity, MikroORM, PrimaryKey, Property } from '@mikro-orm/sqlite';
+import { Entity, MikroORM, PrimaryKey, Property } from "@mikro-orm/mysql";
 
 @Entity()
 class User {
-
   @PrimaryKey()
   id!: number;
 
@@ -16,16 +15,19 @@ class User {
     this.name = name;
     this.email = email;
   }
-
 }
 
 let orm: MikroORM;
 
 beforeAll(async () => {
   orm = await MikroORM.init({
-    dbName: ':memory:',
+    host: "localhost",
+    port: 3378,
+    user: "root",
+    password: "root",
+    dbName: "mikro_orm_test",
     entities: [User],
-    debug: ['query', 'query-params'],
+    debug: ["query", "query-params"],
     allowGlobalContext: true, // only for testing
   });
   await orm.schema.refreshDatabase();
@@ -35,17 +37,20 @@ afterAll(async () => {
   await orm.close(true);
 });
 
-test('basic CRUD example', async () => {
-  orm.em.create(User, { name: 'Foo', email: 'foo' });
-  await orm.em.flush();
-  orm.em.clear();
+// Commenting the beforeEach and afterEach resolves the issue.
+beforeEach(async () => {
+  await orm.em.begin();
+});
 
-  const user = await orm.em.findOneOrFail(User, { email: 'foo' });
-  expect(user.name).toBe('Foo');
-  user.name = 'Bar';
-  orm.em.remove(user);
-  await orm.em.flush();
+afterEach(async () => {
+  await orm.em.rollback();
+});
 
-  const count = await orm.em.count(User, { email: 'foo' });
-  expect(count).toBe(0);
+test("refresh breaks UnitOfWork", async () => {
+  const user1 = orm.em.create(User, { name: "D", email: "d@a.ch" });
+  await orm.em.persistAndFlush(user1);
+  // Commenting the refresh "resolves" the issue.
+  await orm.em.refresh(user1);
+  const user2 = await orm.em.findOneOrFail(User, user1.id);
+  expect(user1 === user2).toBeTruthy();
 });
